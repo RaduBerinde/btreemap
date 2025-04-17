@@ -1,2 +1,2 @@
 # btreemap
-BTree map based on github.com/google/btree
+BTree map based on [google/btree](https://github.com/google/btree)
