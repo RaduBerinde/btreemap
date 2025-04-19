@@ -14,6 +14,9 @@
 
 package btreemap
 
+// This file contains the original github.com/google/btree/btree_generic_test.go
+// tests, adapted to use BTreeMap.
+
 import (
 	"flag"
 	"math/rand"
@@ -602,7 +605,15 @@ func BenchmarkDescendLessOrEqualG(b *testing.B) {
 
 const cloneTestSize = 10000
 
-func cloneTestG(t *testing.T, b *bTree[int], start int, p []int, wg *sync.WaitGroup, trees *[]*bTree[int], lock *sync.Mutex) {
+func cloneTestG(
+	t *testing.T,
+	b *bTree[int],
+	start int,
+	p []int,
+	wg *sync.WaitGroup,
+	trees *[]*bTree[int],
+	lock *sync.Mutex,
+) {
 	t.Logf("Starting new clone at %v", start)
 	lock.Lock()
 	*trees = append(*trees, b)
