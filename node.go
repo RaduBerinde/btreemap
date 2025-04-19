@@ -95,7 +95,7 @@ func (n *node[K, V]) maybeSplitChild(i, maxItems int) bool {
 // no nodes in the subtree exceed maxItems items.  Should an equivalent item be
 // be found/replaced by insert, it will be returned.
 func (n *node[K, V]) insert(item kv[K, V], maxItems int) (_ kv[K, V], _ bool) {
-	i, found := findKV(n.items, item.k, n.cow.less)
+	i, found := findKV(n.items, item.k, n.cow.cmp)
 	if found {
 		out := n.items[i]
 		n.items[i] = item
@@ -107,10 +107,10 @@ func (n *node[K, V]) insert(item kv[K, V], maxItems int) (_ kv[K, V], _ bool) {
 	}
 	if n.maybeSplitChild(i, maxItems) {
 		inTree := n.items[i]
-		switch {
-		case n.cow.less(item.k, inTree.k):
+		switch c := n.cow.cmp(item.k, inTree.k); {
+		case c < 0:
 			// no change, we want first split node
-		case n.cow.less(inTree.k, item.k):
+		case c > 0:
 			i++ // we want second split node
 		default:
 			out := n.items[i]
@@ -123,7 +123,7 @@ func (n *node[K, V]) insert(item kv[K, V], maxItems int) (_ kv[K, V], _ bool) {
 
 // get finds the given key in the subtree and returns the key and value.
 func (n *node[K, V]) get(key K) (_ K, _ V, _ bool) {
-	i, found := findKV(n.items, key, n.cow.less)
+	i, found := findKV(n.items, key, n.cow.cmp)
 	if found {
 		return n.items[i].k, n.items[i].v, true
 	} else if len(n.children) > 0 {
@@ -186,7 +186,7 @@ func (n *node[K, V]) remove(key K, minItems int, typ toRemove) (_ kv[K, V], _ bo
 		}
 		i = 0
 	case removeItem:
-		i, found = findKV(n.items, key, n.cow.less)
+		i, found = findKV(n.items, key, n.cow.cmp)
 		if len(n.children) == 0 {
 			if found {
 				return n.items.removeAt(i), true
@@ -295,7 +295,7 @@ func (n *node[K, V]) ascend(
 	var ok bool
 	var index int
 	if start.kind != boundKindNone {
-		index, _ = findKV(n.items, start.key, n.cow.less)
+		index, _ = findKV(n.items, start.key, n.cow.cmp)
 	}
 	for i := index; i < len(n.items); i++ {
 		if len(n.children) > 0 {
@@ -303,12 +303,12 @@ func (n *node[K, V]) ascend(
 				return hit, false
 			}
 		}
-		if start.kind == boundKindExclusive && !hit && !n.cow.less(start.key, n.items[i].k) {
+		if start.kind == boundKindExclusive && !hit && n.cow.cmp(start.key, n.items[i].k) >= 0 {
 			hit = true
 			continue
 		}
 		hit = true
-		if stop.kind != boundKindNone && !n.cow.less(n.items[i].k, stop.key) {
+		if stop.kind != boundKindNone && n.cow.cmp(n.items[i].k, stop.key) >= 0 {
 			return hit, false
 		}
 		if !iter(n.items[i].k, n.items[i].v) {
@@ -331,7 +331,7 @@ func (n *node[K, V]) descend(
 	var index int
 	if start.kind != boundKindNone {
 		var found bool
-		index, found = findKV(n.items, start.key, n.cow.less)
+		index, found = findKV(n.items, start.key, n.cow.cmp)
 		if !found {
 			index = index - 1
 		}
@@ -339,8 +339,9 @@ func (n *node[K, V]) descend(
 		index = len(n.items) - 1
 	}
 	for i := index; i >= 0; i-- {
-		if start.kind != boundKindNone && !n.cow.less(n.items[i].k, start.key) {
-			if start.kind == boundKindExclusive || hit || n.cow.less(start.key, n.items[i].k) {
+		if start.kind != boundKindNone {
+			c := n.cow.cmp(start.key, n.items[i].k)
+			if c < 0 || (c == 0 && (start.kind == boundKindExclusive || hit)) {
 				continue
 			}
 		}
@@ -349,7 +350,7 @@ func (n *node[K, V]) descend(
 				return hit, false
 			}
 		}
-		if stop.kind != boundKindNone && !n.cow.less(stop.key, n.items[i].k) {
+		if stop.kind != boundKindNone && n.cow.cmp(stop.key, n.items[i].k) >= 0 {
 			return hit, false //	continue
 		}
 		hit = true

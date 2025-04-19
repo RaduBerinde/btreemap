@@ -77,55 +77,35 @@ type Item interface {
 // associated Ascend* function will immediately return.
 type ItemIterator[K, V any] func(key K, value V) bool
 
-// Ordered represents the set of types for which the '<' operator work.
-type Ordered interface {
-	~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~float32 | ~float64 | ~string
-}
-
-// Less[T] returns a default LessFunc that uses the '<' operator for types that support it.
-func Less[T Ordered]() LessFunc[T] {
-	return func(a, b T) bool { return a < b }
-}
-
-// NewOrdered creates a new B-Tree for ordered types.
-func NewOrdered[K Ordered, V any](degree int) *BTreeMap[K, V] {
-	return New[K, V](degree, Less[K]())
-}
-
 // New creates a new B-Tree with the given degree.
 //
 // New(2), for example, will create a 2-3-4 tree (each node contains 1-3 items
 // and 2-4 children).
 //
 // The passed-in LessFunc determines how objects of type T are ordered.
-func New[K any, V any](degree int, less LessFunc[K]) *BTreeMap[K, V] {
-	return NewWithFreeList(degree, less, NewFreeList[K, V](DefaultFreeListSize))
+func New[K any, V any](degree int, cmp CmpFunc[K]) *BTreeMap[K, V] {
+	return NewWithFreeList(degree, cmp, NewFreeList[K, V](DefaultFreeListSize))
 }
 
 // NewWithFreeList creates a new B-Tree that uses the given node free list.
-func NewWithFreeList[K any, V any](
-	degree int, less LessFunc[K], f *FreeList[K, V],
-) *BTreeMap[K, V] {
+func NewWithFreeList[K any, V any](degree int, cmp CmpFunc[K], f *FreeList[K, V]) *BTreeMap[K, V] {
 	if degree <= 1 {
 		panic("bad degree")
 	}
 	return &BTreeMap[K, V]{
 		degree: degree,
-		cow:    &copyOnWriteContext[K, V]{freelist: f, less: less},
+		cow:    &copyOnWriteContext[K, V]{freelist: f, cmp: cmp},
 	}
 }
 
 // findKV returns the index where the given key should be inserted into this
 // list.  'found' is true if the kty already exists in the list at the given
 // index.
-func findKV[K any, V any](s items[kv[K, V]], key K, less func(K, K) bool) (index int, found bool) {
+func findKV[K any, V any](s items[kv[K, V]], key K, cmp CmpFunc[K]) (index int, found bool) {
 	i := sort.Search(len(s), func(i int) bool {
-		return less(key, s[i].k)
+		return cmp(key, s[i].k) <= 0
 	})
-	if i > 0 && !less(s[i-1].k, key) {
-		return i - 1, true
-	}
-	return i, false
+	return i, i < len(s) && cmp(key, s[i].k) == 0
 }
 
 // BTreeMap is a generic implementation of a B-Tree.
@@ -142,9 +122,11 @@ type BTreeMap[K any, V any] struct {
 	cow    *copyOnWriteContext[K, V]
 }
 
-// LessFunc[T] determines how to order a type 'T'.  It should implement a strict
-// ordering, and should return true if within that ordering, 'a' < 'b'.
-type LessFunc[T any] func(a, b T) bool
+// CmpFunc returns:
+// - 0 if the two keys are equal;
+// - a negative number if a < b;
+// - a positive number if a > b.
+type CmpFunc[K any] func(a, b K) int
 
 // copyOnWriteContext pointers determine node ownership... a tree with a write
 // context equivalent to a node's write context is allowed to modify that node.
@@ -162,7 +144,7 @@ type LessFunc[T any] func(a, b T) bool
 // copy.
 type copyOnWriteContext[K any, V any] struct {
 	freelist *FreeList[K, V]
-	less     LessFunc[K]
+	cmp      CmpFunc[K]
 }
 
 // Clone clones the btree, lazily.  Clone should not be called concurrently,

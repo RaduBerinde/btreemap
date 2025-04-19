@@ -18,6 +18,7 @@ package btreemap
 // tests, adapted to use BTreeMap.
 
 import (
+	"cmp"
 	"flag"
 	"math/rand"
 	"reflect"
@@ -38,7 +39,7 @@ func (b *bTree[T]) Clone() *bTree[T] {
 
 func newInt(degree int) *bTree[int] {
 	return &bTree[int]{
-		BTreeMap: New[int, struct{}](degree, func(a, b int) bool { return a < b }),
+		BTreeMap: New[int, struct{}](degree, cmp.Compare[int]),
 	}
 }
 
@@ -675,7 +676,7 @@ func BenchmarkDeleteAndRestoreG(b *testing.B) {
 	b.ResetTimer()
 	b.Run(`CopyBigFreeList`, func(b *testing.B) {
 		fl := NewFreeList[int, struct{}](16392)
-		tr := NewWithFreeList[int, struct{}](*btreeDegree, Less[int](), fl)
+		tr := NewWithFreeList[int, struct{}](*btreeDegree, cmp.Compare[int], fl)
 		for _, v := range items {
 			tr.ReplaceOrInsert(v, struct{}{})
 		}
@@ -691,7 +692,7 @@ func BenchmarkDeleteAndRestoreG(b *testing.B) {
 				tr.Delete(del)
 			}
 			// tr is now empty, we make a new empty copy of it.
-			tr = NewWithFreeList[int](*btreeDegree, Less[int](), fl)
+			tr = NewWithFreeList[int](*btreeDegree, cmp.Compare[int], fl)
 			for _, v := range items {
 				tr.ReplaceOrInsert(v, struct{}{})
 			}
@@ -722,7 +723,7 @@ func BenchmarkDeleteAndRestoreG(b *testing.B) {
 	})
 	b.Run(`ClearBigFreelist`, func(b *testing.B) {
 		fl := NewFreeList[int, struct{}](16392)
-		tr := NewWithFreeList[int, struct{}](*btreeDegree, Less[int](), fl)
+		tr := NewWithFreeList[int, struct{}](*btreeDegree, cmp.Compare[int], fl)
 		for _, v := range items {
 			tr.ReplaceOrInsert(v, struct{}{})
 		}
