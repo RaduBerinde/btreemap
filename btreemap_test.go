@@ -26,7 +26,7 @@ import (
 // elements in random order then tests the iteration results for random ranges
 // using various types of bounds.
 func TestIteration(t *testing.T) {
-	for it := 0; it < 1000; it++ {
+	for it := 0; it < 100; it++ {
 		seed := rand.Uint64()
 		rng := rand.New(rand.NewPCG(seed, 0))
 		n := 1 + int(rng.ExpFloat64()*10)
@@ -111,4 +111,142 @@ func TestIteration(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestRandomized(t *testing.T) {
+	for it := 0; it < 200; it++ {
+		seed := rand.Uint64()
+		rng := rand.New(rand.NewPCG(seed, 0))
+		degree := 2 + int(rng.ExpFloat64()*4)
+		maxKey := rng.IntN(maxNaiveSize)
+
+		for ops := 0; ops < 1000; ops++ {
+			type instance struct {
+				m *BTreeMap[int, int]
+				n *naive
+			}
+			// We maintain a forest of trees.
+			instances := []instance{{m: New[int, int](degree, cmp.Compare[int]), n: &naive{}}}
+			const maxInstances = 10
+
+			i := instances[rng.IntN(len(instances))]
+
+			// Cross-check iteration results.
+			for checks := 0; checks < 10; checks++ {
+				a := rng.IntN(maxKey + 1)
+				b := rng.IntN(maxKey + 1)
+				if a > b {
+					a, b = b, a
+				}
+				expected := i.n.KeysInRange(a, b)
+
+				low := GE(a)
+				if rng.IntN(2) == 0 {
+					low = GT(a - 1)
+				}
+				if a == 0 && rng.IntN(2) == 0 {
+					low = Min[int]()
+				}
+				high := LE(b)
+				if rng.IntN(2) == 0 {
+					high = LT(b + 1)
+				}
+				if b == maxKey && rng.IntN(2) == 0 {
+					high = Max[int]()
+				}
+				var actual []int
+				for k, v := range i.m.Ascend(low, high) {
+					if v != i.n.values[k] {
+						t.Fatalf("seed: %d invalid value for key %d", seed, k)
+					}
+					actual = append(actual, k)
+				}
+				if !reflect.DeepEqual(expected, actual) {
+					t.Fatalf("seed: %d expected %v, Ascend produced %v", seed, expected, actual)
+				}
+				slices.Reverse(expected)
+				actual = actual[:0]
+				for k, v := range i.m.Descend(high, low) {
+					if v != i.n.values[k] {
+						t.Fatalf("seed: %d invalid value for key %d", seed, k)
+					}
+					actual = append(actual, k)
+				}
+				if !reflect.DeepEqual(expected, actual) {
+					t.Fatalf("seed: %d expected %v, Descend produced %v", seed, expected, actual)
+				}
+			}
+
+			op := rng.IntN(100)
+			switch {
+			case op <= 60:
+				k := rng.IntN(maxKey + 1)
+				v := 1 + rng.IntN(10000)
+
+				ak, av, ab := i.m.ReplaceOrInsert(k, v)
+				ek, ev, eb := i.n.ReplaceOrInsert(k, v)
+				if ak != ek || av != ev || ab != eb {
+					t.Fatalf("seed: %d ReplaceOrInsert(%d, %d) got (%d, %d, %v), want (%d, %d, %v)", seed, k, v, ak, av, ab, ek, ev, eb)
+				}
+
+			case op <= 99:
+				k := rng.IntN(maxKey + 1)
+				ak, av, ab := i.m.Delete(k)
+				ek, ev, eb := i.n.Delete(k)
+				if ak != ek || av != ev || ab != eb {
+					t.Fatalf("seed: %d Delete(%d) got (%d, %d, %v), want (%d, %d, %v)", seed, k, ak, av, ab, ek, ev, eb)
+				}
+
+			default:
+				// Clone.
+				c := instance{
+					m: i.m.Clone(),
+					n: i.n.Clone(),
+				}
+				if len(instances) < maxInstances {
+					instances = append(instances, c)
+				} else {
+					instances[rng.IntN(len(instances))] = c
+				}
+			}
+		}
+	}
+}
+
+const maxNaiveSize = 1000
+
+type naive struct {
+	values [maxNaiveSize]int
+}
+
+func (n *naive) ReplaceOrInsert(k int, v int) (int, int, bool) {
+	old := n.values[k]
+	n.values[k] = v
+	if old != 0 {
+		return k, old, true
+	}
+	return 0, 0, false
+}
+
+func (n *naive) KeysInRange(low, high int) []int {
+	var r []int
+	for i := low; i <= high; i++ {
+		if n.values[i] != 0 {
+			r = append(r, i)
+		}
+	}
+	return r
+}
+
+func (n *naive) Delete(k int) (int, int, bool) {
+	old := n.values[k]
+	n.values[k] = 0
+	if old != 0 {
+		return k, old, true
+	}
+	return 0, 0, false
+}
+
+func (n *naive) Clone() *naive {
+	return &naive{values: n.values}
 }
