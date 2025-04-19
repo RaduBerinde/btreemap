@@ -25,13 +25,18 @@ import (
 // It must at all times maintain the invariant that either
 //   - len(children) == 0, len(items) unconstrained
 //   - len(children) == len(items) + 1
-type node[T any] struct {
-	items    items[T]
-	children items[*node[T]]
-	cow      *copyOnWriteContext[T]
+type node[K any, V any] struct {
+	items    items[kv[K, V]]
+	children items[*node[K, V]]
+	cow      *copyOnWriteContext[K, V]
 }
 
-func (n *node[T]) mutableFor(cow *copyOnWriteContext[T]) *node[T] {
+type kv[K any, V any] struct {
+	k K
+	v V
+}
+
+func (n *node[K, V]) mutableFor(cow *copyOnWriteContext[K, V]) *node[K, V] {
 	if n.cow == cow {
 		return n
 	}
@@ -39,20 +44,20 @@ func (n *node[T]) mutableFor(cow *copyOnWriteContext[T]) *node[T] {
 	if cap(out.items) >= len(n.items) {
 		out.items = out.items[:len(n.items)]
 	} else {
-		out.items = make(items[T], len(n.items), cap(n.items))
+		out.items = make(items[kv[K, V]], len(n.items), cap(n.items))
 	}
 	copy(out.items, n.items)
 	// Copy children
 	if cap(out.children) >= len(n.children) {
 		out.children = out.children[:len(n.children)]
 	} else {
-		out.children = make(items[*node[T]], len(n.children), cap(n.children))
+		out.children = make(items[*node[K, V]], len(n.children), cap(n.children))
 	}
 	copy(out.children, n.children)
 	return out
 }
 
-func (n *node[T]) mutableChild(i int) *node[T] {
+func (n *node[K, V]) mutableChild(i int) *node[K, V] {
 	c := n.children[i].mutableFor(n.cow)
 	n.children[i] = c
 	return c
@@ -61,7 +66,7 @@ func (n *node[T]) mutableChild(i int) *node[T] {
 // split splits the given node at the given index.  The current node shrinks,
 // and this function returns the item that existed at that index and a new node
 // containing all items/children after it.
-func (n *node[T]) split(i int) (T, *node[T]) {
+func (n *node[K, V]) split(i int) (kv[K, V], *node[K, V]) {
 	item := n.items[i]
 	next := n.cow.newNode()
 	next.items = append(next.items, n.items[i+1:]...)
@@ -75,7 +80,7 @@ func (n *node[T]) split(i int) (T, *node[T]) {
 
 // maybeSplitChild checks if a child should be split, and if so splits it.
 // Returns whether or not a split occurred.
-func (n *node[T]) maybeSplitChild(i, maxItems int) bool {
+func (n *node[K, V]) maybeSplitChild(i, maxItems int) bool {
 	if len(n.children[i].items) < maxItems {
 		return false
 	}
@@ -89,8 +94,8 @@ func (n *node[T]) maybeSplitChild(i, maxItems int) bool {
 // insert inserts an item into the subtree rooted at this node, making sure
 // no nodes in the subtree exceed maxItems items.  Should an equivalent item be
 // be found/replaced by insert, it will be returned.
-func (n *node[T]) insert(item T, maxItems int) (_ T, _ bool) {
-	i, found := n.items.find(item, n.cow.less)
+func (n *node[K, V]) insert(item kv[K, V], maxItems int) (_ kv[K, V], _ bool) {
+	i, found := findKV(n.items, item.k, n.cow.less)
 	if found {
 		out := n.items[i]
 		n.items[i] = item
@@ -103,9 +108,9 @@ func (n *node[T]) insert(item T, maxItems int) (_ T, _ bool) {
 	if n.maybeSplitChild(i, maxItems) {
 		inTree := n.items[i]
 		switch {
-		case n.cow.less(item, inTree):
+		case n.cow.less(item.k, inTree.k):
 			// no change, we want first split node
-		case n.cow.less(inTree, item):
+		case n.cow.less(inTree.k, item.k):
 			i++ // we want second split node
 		default:
 			out := n.items[i]
@@ -116,11 +121,11 @@ func (n *node[T]) insert(item T, maxItems int) (_ T, _ bool) {
 	return n.mutableChild(i).insert(item, maxItems)
 }
 
-// get finds the given key in the subtree and returns it.
-func (n *node[T]) get(key T) (_ T, _ bool) {
-	i, found := n.items.find(key, n.cow.less)
+// get finds the given key in the subtree and returns the key and value.
+func (n *node[K, V]) get(key K) (_ K, _ V, _ bool) {
+	i, found := findKV(n.items, key, n.cow.less)
 	if found {
-		return n.items[i], true
+		return n.items[i].k, n.items[i].v, true
 	} else if len(n.children) > 0 {
 		return n.children[i].get(key)
 	}
@@ -128,7 +133,7 @@ func (n *node[T]) get(key T) (_ T, _ bool) {
 }
 
 // min returns the first item in the subtree.
-func min[T any](n *node[T]) (_ T, found bool) {
+func min[K any, V any](n *node[K, V]) (_ K, _ V, ok bool) {
 	if n == nil {
 		return
 	}
@@ -138,11 +143,11 @@ func min[T any](n *node[T]) (_ T, found bool) {
 	if len(n.items) == 0 {
 		return
 	}
-	return n.items[0], true
+	return n.items[0].k, n.items[0].v, true
 }
 
 // max returns the last item in the subtree.
-func max[T any](n *node[T]) (_ T, found bool) {
+func max[K any, V any](n *node[K, V]) (_ K, _ V, ok bool) {
 	if n == nil {
 		return
 	}
@@ -152,7 +157,8 @@ func max[T any](n *node[T]) (_ T, found bool) {
 	if len(n.items) == 0 {
 		return
 	}
-	return n.items[len(n.items)-1], true
+	out := n.items[len(n.items)-1]
+	return out.k, out.v, true
 }
 
 // toRemove details what item to remove in a node.remove call.
@@ -165,7 +171,7 @@ const (
 )
 
 // remove removes an item from the subtree rooted at this node.
-func (n *node[T]) remove(item T, minItems int, typ toRemove) (_ T, _ bool) {
+func (n *node[K, V]) remove(key K, minItems int, typ toRemove) (_ kv[K, V], _ bool) {
 	var i int
 	var found bool
 	switch typ {
@@ -180,7 +186,7 @@ func (n *node[T]) remove(item T, minItems int, typ toRemove) (_ T, _ bool) {
 		}
 		i = 0
 	case removeItem:
-		i, found = n.items.find(item, n.cow.less)
+		i, found = findKV(n.items, key, n.cow.less)
 		if len(n.children) == 0 {
 			if found {
 				return n.items.removeAt(i), true
@@ -192,7 +198,7 @@ func (n *node[T]) remove(item T, minItems int, typ toRemove) (_ T, _ bool) {
 	}
 	// If we get to here, we have children.
 	if len(n.children[i].items) <= minItems {
-		return n.growChildAndRemove(i, item, minItems, typ)
+		return n.growChildAndRemove(i, key, minItems, typ)
 	}
 	child := n.mutableChild(i)
 	// Either we had enough items to begin with, or we've done some
@@ -205,13 +211,13 @@ func (n *node[T]) remove(item T, minItems int, typ toRemove) (_ T, _ bool) {
 		// We use our special-case 'remove' call with typ=maxItem to pull the
 		// predecessor of item i (the rightmost leaf of our immediate left child)
 		// and set it into where we pulled the item from.
-		var zero T
+		var zero K
 		n.items[i], _ = child.remove(zero, minItems, removeMax)
 		return out, true
 	}
 	// Final recursive call.  Once we're here, we know that the item isn't in this
 	// node and that the child is big enough to remove from.
-	return child.remove(item, minItems, typ)
+	return child.remove(key, minItems, typ)
 }
 
 // growChildAndRemove grows child 'i' to make sure it's possible to remove an
@@ -238,7 +244,7 @@ func (n *node[T]) remove(item T, minItems int, typ toRemove) (_ T, _ bool) {
 // We then simply redo our remove call, and the second time (regardless of
 // whether we're in case 1 or 2), we'll have enough items and can guarantee
 // that we hit case A.
-func (n *node[T]) growChildAndRemove(i int, item T, minItems int, typ toRemove) (T, bool) {
+func (n *node[K, V]) growChildAndRemove(i int, key K, minItems int, typ toRemove) (kv[K, V], bool) {
 	if i > 0 && len(n.children[i-1].items) > minItems {
 		// Steal from left child
 		child := n.mutableChild(i)
@@ -272,7 +278,7 @@ func (n *node[T]) growChildAndRemove(i int, item T, minItems int, typ toRemove) 
 		child.children = append(child.children, mergeChild.children...)
 		n.cow.freeNode(mergeChild)
 	}
-	return n.remove(item, minItems, typ)
+	return n.remove(key, minItems, typ)
 }
 
 type direction int
@@ -301,13 +307,13 @@ func empty[T any]() optionalItem[T] {
 // will force the iterator to include the first item when it equals 'start',
 // thus creating a "greaterOrEqual" or "lessThanEqual" rather than just a
 // "greaterThan" or "lessThan" queries.
-func (n *node[T]) iterate(dir direction, start, stop optionalItem[T], includeStart bool, hit bool, iter ItemIterator[T]) (bool, bool) {
+func (n *node[K, V]) iterate(dir direction, start, stop optionalItem[K], includeStart bool, hit bool, iter func(K, V) bool) (bool, bool) {
 	var ok, found bool
 	var index int
 	switch dir {
 	case ascend:
 		if start.valid {
-			index, _ = n.items.find(start.item, n.cow.less)
+			index, _ = findKV(n.items, start.item, n.cow.less)
 		}
 		for i := index; i < len(n.items); i++ {
 			if len(n.children) > 0 {
@@ -315,15 +321,15 @@ func (n *node[T]) iterate(dir direction, start, stop optionalItem[T], includeSta
 					return hit, false
 				}
 			}
-			if !includeStart && !hit && start.valid && !n.cow.less(start.item, n.items[i]) {
+			if !includeStart && !hit && start.valid && !n.cow.less(start.item, n.items[i].k) {
 				hit = true
 				continue
 			}
 			hit = true
-			if stop.valid && !n.cow.less(n.items[i], stop.item) {
+			if stop.valid && !n.cow.less(n.items[i].k, stop.item) {
 				return hit, false
 			}
-			if !iter(n.items[i]) {
+			if !iter(n.items[i].k, n.items[i].v) {
 				return hit, false
 			}
 		}
@@ -334,7 +340,7 @@ func (n *node[T]) iterate(dir direction, start, stop optionalItem[T], includeSta
 		}
 	case descend:
 		if start.valid {
-			index, found = n.items.find(start.item, n.cow.less)
+			index, found = findKV(n.items, start.item, n.cow.less)
 			if !found {
 				index = index - 1
 			}
@@ -342,8 +348,8 @@ func (n *node[T]) iterate(dir direction, start, stop optionalItem[T], includeSta
 			index = len(n.items) - 1
 		}
 		for i := index; i >= 0; i-- {
-			if start.valid && !n.cow.less(n.items[i], start.item) {
-				if !includeStart || hit || n.cow.less(start.item, n.items[i]) {
+			if start.valid && !n.cow.less(n.items[i].k, start.item) {
+				if !includeStart || hit || n.cow.less(start.item, n.items[i].k) {
 					continue
 				}
 			}
@@ -352,11 +358,11 @@ func (n *node[T]) iterate(dir direction, start, stop optionalItem[T], includeSta
 					return hit, false
 				}
 			}
-			if stop.valid && !n.cow.less(stop.item, n.items[i]) {
+			if stop.valid && !n.cow.less(stop.item, n.items[i].k) {
 				return hit, false //	continue
 			}
 			hit = true
-			if !iter(n.items[i]) {
+			if !iter(n.items[i].k, n.items[i].v) {
 				return hit, false
 			}
 		}
@@ -370,7 +376,7 @@ func (n *node[T]) iterate(dir direction, start, stop optionalItem[T], includeSta
 }
 
 // print is used for testing/debugging purposes.
-func (n *node[T]) print(w io.Writer, level int) {
+func (n *node[K, V]) print(w io.Writer, level int) {
 	fmt.Fprintf(w, "%sNODE:%v\n", strings.Repeat("  ", level), n.items)
 	for _, c := range n.children {
 		c.print(w, level+1)
