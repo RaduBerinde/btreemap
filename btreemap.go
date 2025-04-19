@@ -304,7 +304,7 @@ func (t *BTreeMap[K, V]) AscendRange(greaterOrEqual, lessThan K, iterator ItemIt
 	if t.root == nil {
 		return
 	}
-	t.root.iterate(ascend, optional[K](greaterOrEqual), optional[K](lessThan), true, false, iterator)
+	t.root.ascend(optional[K](greaterOrEqual), optional[K](lessThan), true, false, iterator)
 }
 
 // AscendLessThan calls the iterator for every value in the tree within the range
@@ -313,7 +313,7 @@ func (t *BTreeMap[K, V]) AscendLessThan(pivot K, iterator ItemIterator[K, V]) {
 	if t.root == nil {
 		return
 	}
-	t.root.iterate(ascend, empty[K](), optional(pivot), false, false, iterator)
+	t.root.ascend(empty[K](), optional(pivot), false, false, iterator)
 }
 
 // AscendGreaterOrEqual calls the iterator for every value in the tree within
@@ -322,7 +322,7 @@ func (t *BTreeMap[K, V]) AscendGreaterOrEqual(pivot K, iterator ItemIterator[K, 
 	if t.root == nil {
 		return
 	}
-	t.root.iterate(ascend, optional[K](pivot), empty[K](), true, false, iterator)
+	t.root.ascend(optional[K](pivot), empty[K](), true, false, iterator)
 }
 
 // Ascend calls the iterator for every value in the tree within the range
@@ -331,7 +331,7 @@ func (t *BTreeMap[K, V]) Ascend(iterator ItemIterator[K, V]) {
 	if t.root == nil {
 		return
 	}
-	t.root.iterate(ascend, empty[K](), empty[K](), false, false, iterator)
+	t.root.ascend(empty[K](), empty[K](), false, false, iterator)
 }
 
 // DescendRange calls the iterator for every value in the tree within the range
@@ -340,7 +340,7 @@ func (t *BTreeMap[K, V]) DescendRange(lessOrEqual, greaterThan K, iterator ItemI
 	if t.root == nil {
 		return
 	}
-	t.root.iterate(descend, optional[K](lessOrEqual), optional[K](greaterThan), true, false, iterator)
+	t.root.descend(optional[K](lessOrEqual), optional[K](greaterThan), true, false, iterator)
 }
 
 // DescendLessOrEqual calls the iterator for every value in the tree within the range
@@ -349,7 +349,7 @@ func (t *BTreeMap[K, V]) DescendLessOrEqual(pivot K, iterator ItemIterator[K, V]
 	if t.root == nil {
 		return
 	}
-	t.root.iterate(descend, optional[K](pivot), empty[K](), true, false, iterator)
+	t.root.descend(optional[K](pivot), empty[K](), true, false, iterator)
 }
 
 // DescendGreaterThan calls the iterator for every value in the tree within
@@ -358,7 +358,7 @@ func (t *BTreeMap[K, V]) DescendGreaterThan(pivot K, iterator ItemIterator[K, V]
 	if t.root == nil {
 		return
 	}
-	t.root.iterate(descend, empty[K](), optional[K](pivot), false, false, iterator)
+	t.root.descend(empty[K](), optional[K](pivot), false, false, iterator)
 }
 
 // Descend calls the iterator for every value in the tree within the range
@@ -367,7 +367,7 @@ func (t *BTreeMap[K, V]) Descend(iterator ItemIterator[K, V]) {
 	if t.root == nil {
 		return
 	}
-	t.root.iterate(descend, empty[K](), empty[K](), false, false, iterator)
+	t.root.descend(empty[K](), empty[K](), false, false, iterator)
 }
 
 // Get looks for the key item in the tree, returning it.  It returns

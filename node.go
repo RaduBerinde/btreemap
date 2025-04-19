@@ -281,13 +281,6 @@ func (n *node[K, V]) growChildAndRemove(i int, key K, minItems int, typ toRemove
 	return n.remove(key, minItems, typ)
 }
 
-type direction int
-
-const (
-	descend = direction(-1)
-	ascend  = direction(+1)
-)
-
 type optionalItem[T any] struct {
 	item  T
 	valid bool
@@ -307,69 +300,76 @@ func empty[T any]() optionalItem[T] {
 // will force the iterator to include the first item when it equals 'start',
 // thus creating a "greaterOrEqual" or "lessThanEqual" rather than just a
 // "greaterThan" or "lessThan" queries.
-func (n *node[K, V]) iterate(dir direction, start, stop optionalItem[K], includeStart bool, hit bool, iter func(K, V) bool) (bool, bool) {
-	var ok, found bool
+func (n *node[K, V]) ascend(
+	start, stop optionalItem[K], includeStart bool, hit bool, iter func(K, V) bool,
+) (bool, bool) {
+	var ok bool
 	var index int
-	switch dir {
-	case ascend:
-		if start.valid {
-			index, _ = findKV(n.items, start.item, n.cow.less)
-		}
-		for i := index; i < len(n.items); i++ {
-			if len(n.children) > 0 {
-				if hit, ok = n.children[i].iterate(dir, start, stop, includeStart, hit, iter); !ok {
-					return hit, false
-				}
+	if start.valid {
+		index, _ = findKV(n.items, start.item, n.cow.less)
+	}
+	for i := index; i < len(n.items); i++ {
+		if len(n.children) > 0 {
+			if hit, ok = n.children[i].ascend(start, stop, includeStart, hit, iter); !ok {
+				return hit, false
 			}
-			if !includeStart && !hit && start.valid && !n.cow.less(start.item, n.items[i].k) {
-				hit = true
+		}
+		if !includeStart && !hit && start.valid && !n.cow.less(start.item, n.items[i].k) {
+			hit = true
+			continue
+		}
+		hit = true
+		if stop.valid && !n.cow.less(n.items[i].k, stop.item) {
+			return hit, false
+		}
+		if !iter(n.items[i].k, n.items[i].v) {
+			return hit, false
+		}
+	}
+	if len(n.children) > 0 {
+		if hit, ok = n.children[len(n.children)-1].ascend(start, stop, includeStart, hit, iter); !ok {
+			return hit, false
+		}
+	}
+	return hit, true
+}
+
+func (n *node[K, V]) descend(
+	start, stop optionalItem[K], includeStart bool, hit bool, iter func(K, V) bool,
+) (bool, bool) {
+	var ok bool
+	var index int
+	if start.valid {
+		var found bool
+		index, found = findKV(n.items, start.item, n.cow.less)
+		if !found {
+			index = index - 1
+		}
+	} else {
+		index = len(n.items) - 1
+	}
+	for i := index; i >= 0; i-- {
+		if start.valid && !n.cow.less(n.items[i].k, start.item) {
+			if !includeStart || hit || n.cow.less(start.item, n.items[i].k) {
 				continue
 			}
-			hit = true
-			if stop.valid && !n.cow.less(n.items[i].k, stop.item) {
-				return hit, false
-			}
-			if !iter(n.items[i].k, n.items[i].v) {
-				return hit, false
-			}
 		}
 		if len(n.children) > 0 {
-			if hit, ok = n.children[len(n.children)-1].iterate(dir, start, stop, includeStart, hit, iter); !ok {
+			if hit, ok = n.children[i+1].descend(start, stop, includeStart, hit, iter); !ok {
 				return hit, false
 			}
 		}
-	case descend:
-		if start.valid {
-			index, found = findKV(n.items, start.item, n.cow.less)
-			if !found {
-				index = index - 1
-			}
-		} else {
-			index = len(n.items) - 1
+		if stop.valid && !n.cow.less(stop.item, n.items[i].k) {
+			return hit, false //	continue
 		}
-		for i := index; i >= 0; i-- {
-			if start.valid && !n.cow.less(n.items[i].k, start.item) {
-				if !includeStart || hit || n.cow.less(start.item, n.items[i].k) {
-					continue
-				}
-			}
-			if len(n.children) > 0 {
-				if hit, ok = n.children[i+1].iterate(dir, start, stop, includeStart, hit, iter); !ok {
-					return hit, false
-				}
-			}
-			if stop.valid && !n.cow.less(stop.item, n.items[i].k) {
-				return hit, false //	continue
-			}
-			hit = true
-			if !iter(n.items[i].k, n.items[i].v) {
-				return hit, false
-			}
+		hit = true
+		if !iter(n.items[i].k, n.items[i].v) {
+			return hit, false
 		}
-		if len(n.children) > 0 {
-			if hit, ok = n.children[0].iterate(dir, start, stop, includeStart, hit, iter); !ok {
-				return hit, false
-			}
+	}
+	if len(n.children) > 0 {
+		if hit, ok = n.children[0].descend(start, stop, includeStart, hit, iter); !ok {
+			return hit, false
 		}
 	}
 	return hit, true
