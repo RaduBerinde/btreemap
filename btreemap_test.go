@@ -45,7 +45,7 @@ func TestIteration(t *testing.T) {
 					expected = append(expected, i)
 				}
 				var actual []int
-				for k, v := range m.NewAscend(low, high) {
+				for k, v := range m.Ascend(low, high) {
 					if v != k*k {
 						t.Fatalf("invalid value")
 					}
@@ -56,7 +56,7 @@ func TestIteration(t *testing.T) {
 				}
 				slices.Reverse(expected)
 				actual = actual[:0]
-				for k, v := range m.NewDescend(high, low) {
+				for k, v := range m.Descend(high, low) {
 					if v != k*k {
 						t.Fatalf("invalid value")
 					}
@@ -68,10 +68,10 @@ func TestIteration(t *testing.T) {
 			}
 			checkEmpty := func(low LowerBound[int], hi UpperBound[int]) {
 				t.Helper()
-				for k := range m.NewAscend(low, hi) {
+				for k := range m.Ascend(low, hi) {
 					t.Fatalf("seed: %d unexpected Ascend key %v", seed, k)
 				}
-				for k := range m.NewDescend(hi, low) {
+				for k := range m.Descend(hi, low) {
 					t.Fatalf("seed: %d unexpected Descend key %v", seed, k)
 				}
 			}
