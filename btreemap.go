@@ -65,7 +65,6 @@ import (
 	"io"
 	"sort"
 	"strings"
-	"sync"
 )
 
 // Item represents a single object in the tree.
@@ -76,49 +75,6 @@ type Item interface {
 	// If !a.Less(b) && !b.Less(a), we treat this to mean a == b (i.e. we can only
 	// hold one of either a or b in the tree).
 	Less(than Item) bool
-}
-
-const (
-	DefaultFreeListSize = 32
-)
-
-// FreeList represents a free list of btree nodes. By default each
-// BTree has its own FreeList, but multiple BTrees can share the same
-// FreeList, in particular when they're created with Clone.
-// Two Btrees using the same freelist are safe for concurrent write access.
-type FreeList[T any] struct {
-	mu       sync.Mutex
-	freelist []*node[T]
-}
-
-// NewFreeList creates a new free list.
-// size is the maximum size of the returned free list.
-func NewFreeList[T any](size int) *FreeList[T] {
-	return &FreeList[T]{freelist: make([]*node[T], 0, size)}
-}
-
-func (f *FreeList[T]) newNode() (n *node[T]) {
-	f.mu.Lock()
-	index := len(f.freelist) - 1
-	if index < 0 {
-		f.mu.Unlock()
-		return new(node[T])
-	}
-	n = f.freelist[index]
-	f.freelist[index] = nil
-	f.freelist = f.freelist[:index]
-	f.mu.Unlock()
-	return
-}
-
-func (f *FreeList[T]) freeNode(n *node[T]) (out bool) {
-	f.mu.Lock()
-	if len(f.freelist) < cap(f.freelist) {
-		f.freelist = append(f.freelist, n)
-		out = true
-	}
-	f.mu.Unlock()
-	return
 }
 
 // ItemIterator allows callers of {A/De}scend* to iterate in-order over portions of
