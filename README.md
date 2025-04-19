@@ -30,34 +30,33 @@ BTree map based on [google/btree](https://github.com/google/btree)
 package main
 
 import (
-    "cmp"
-    "fmt"
-    "github.com/RaduBerinde/btreemap"
+  "cmp"
+  "fmt"
+  "github.com/RaduBerinde/btreemap"
 )
 
 func main() {
-    // A 2‑3‑4 tree mapping int → string.
-    m := btreemap.New[int,string](2, cmp.Compare[int])
+  // A 2‑3‑4 tree mapping int → string.
+  m := btreemap.New[int,string](2, cmp.Compare[int])
 
-    // Insert / replace
-    _, _, replaced := m.ReplaceOrInsert(42, "meaning")
-    fmt.Println(replaced) // false – key was new
+  // Insert / replace
+  _, _, replaced := m.ReplaceOrInsert(42, "meaning")
+  fmt.Println(replaced) // false – key was new
 
-    // Lookup
-    _, v, ok := m.Get(42)
-    fmt.Println(ok, v)   // true meaning
+  // Lookup
+  _, v, ok := m.Get(42)
+  fmt.Println(ok, v)   // true meaning
 
-    // Range iteration: 10 ≤ k < 100
-    m.Ascend(btreemap.GE(10), btreemap.LT(100))(func(k int, v string) bool {
-        fmt.Printf("%d → %s\n", k, v)
-        return true // keep going
-    })
+  // Range iteration: 10 ≤ k < 100
+  for k, v := range m.Ascend(btreemap.GE(10), btreemap.LT(100)) {
+    fmt.Printf("%d → %s\n", k, v)
+  }
 
-    fmt.Println("len before:", m.Len())
+  fmt.Println("len before:", m.Len())
 
-    // Delete single key
-    m.Delete(42)
-    fmt.Println("len after:", m.Len())
+  // Delete single key
+  m.Delete(42)
+  fmt.Println("len after:", m.Len())
 }
 ```
 
@@ -70,19 +69,19 @@ func main() {
 func New[K,V any](degree int, cmp btreemap.CmpFunc[K]) *BTreeMap[K,V]
 func NewWithFreeList[K,V any](degree int, cmp CmpFunc[K], fl *FreeList[K,V]) *BTreeMap[K,V]
 
-// Mutations.
+// Mutations
 ReplaceOrInsert(key, value) (oldKey, oldValue, replaced bool)
 Delete(key) (oldKey, oldValue, found bool)
 DeleteMin() / DeleteMax()
 Clear(addNodesToFreeList bool)
 
-// Queries.
+// Queries
 Get(key) (key, value, found bool)
 Has(key) bool
 Min()/Max() (key, value, found bool)
 Len() int
 
-// Iteration (log(n) to first element, then amortised O(1))
+// Iteration (log(n) to first element, then amortized O(1))
 Ascend(start LowerBound[K], stop UpperBound[K]) iter.Seq2[K,V]
 Descend(start UpperBound[K], stop LowerBound[K]) iter.Seq2[K,V]
 
@@ -109,11 +108,13 @@ btreemap.LT(key)         // < key (exclusive)
 ```go
 // Print the 5 largest entries.
 count := 0
-m.Descend(btreemap.Max[int](), btreemap.Min[int]())(func(k int, v string) bool {
-    fmt.Println(k, v)
-    count++
-    return count < 5 // stop after 5
-})
+for k, v := range m.Descend(btreemap.Max[int](), btreemap.Min[int]()) {
+  fmt.Println(k, v)
+  count++
+  if count == 5 {
+    break
+  }		
+}
 ```
 
 ### Example: snapshot for concurrent readers
@@ -121,16 +122,15 @@ m.Descend(btreemap.Max[int](), btreemap.Min[int]())(func(k int, v string) bool {
 ```go
 snapshot := m.Clone() // cheap, O(1)
 go func() {
-    // Writer goroutine mutates the original map.
-    for i := 0; i < 1_000; i++ {
-        m.ReplaceOrInsert(i, "val")
-    }
+  // Writer goroutine mutates the original map.
+  for i := 0; i < 1_000; i++ {
+    m.ReplaceOrInsert(i, "val")
+  }
 }()
 
 // Reader goroutine works on an immutable view.
-snapshot.Ascend(btreemap.Min[int](), btreemap.Max[int]())(func(k int, v string) bool {
-    fmt.Println(k, v)
-    return true
+for k, v := range snapshot.Ascend(btreemap.Min[int](), btreemap.Max[int]()) {
+  fmt.Println(k, v)
 })
 ```
 
@@ -149,4 +149,3 @@ snapshot.Ascend(btreemap.Min[int](), btreemap.Max[int]())(func(k int, v string) 
 
 Apache 2.0 – see [LICENSE](LICENSE).  
 Original work ©Google Inc. 2014‑2024
-
