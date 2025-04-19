@@ -281,18 +281,6 @@ func (n *node[K, V]) growChildAndRemove(i int, key K, minItems int, typ toRemove
 	return n.remove(key, minItems, typ)
 }
 
-type optionalItem[T any] struct {
-	item  T
-	valid bool
-}
-
-func optional[T any](item T) optionalItem[T] {
-	return optionalItem[T]{item: item, valid: true}
-}
-func empty[T any]() optionalItem[T] {
-	return optionalItem[T]{}
-}
-
 // iterate provides a simple method for iterating over elements in the tree.
 //
 // When ascending, the 'start' should be less than 'stop' and when descending,
@@ -300,26 +288,27 @@ func empty[T any]() optionalItem[T] {
 // will force the iterator to include the first item when it equals 'start',
 // thus creating a "greaterOrEqual" or "lessThanEqual" rather than just a
 // "greaterThan" or "lessThan" queries.
+// TODO(radu): support inclusive stop bound.
 func (n *node[K, V]) ascend(
-	start, stop optionalItem[K], includeStart bool, hit bool, iter func(K, V) bool,
+	start LowerBound[K], stop UpperBound[K], hit bool, iter func(K, V) bool,
 ) (bool, bool) {
 	var ok bool
 	var index int
-	if start.valid {
-		index, _ = findKV(n.items, start.item, n.cow.less)
+	if start.kind != boundKindNone {
+		index, _ = findKV(n.items, start.key, n.cow.less)
 	}
 	for i := index; i < len(n.items); i++ {
 		if len(n.children) > 0 {
-			if hit, ok = n.children[i].ascend(start, stop, includeStart, hit, iter); !ok {
+			if hit, ok = n.children[i].ascend(start, stop, hit, iter); !ok {
 				return hit, false
 			}
 		}
-		if !includeStart && !hit && start.valid && !n.cow.less(start.item, n.items[i].k) {
+		if start.kind == boundKindExclusive && !hit && !n.cow.less(start.key, n.items[i].k) {
 			hit = true
 			continue
 		}
 		hit = true
-		if stop.valid && !n.cow.less(n.items[i].k, stop.item) {
+		if stop.kind != boundKindNone && !n.cow.less(n.items[i].k, stop.key) {
 			return hit, false
 		}
 		if !iter(n.items[i].k, n.items[i].v) {
@@ -327,21 +316,22 @@ func (n *node[K, V]) ascend(
 		}
 	}
 	if len(n.children) > 0 {
-		if hit, ok = n.children[len(n.children)-1].ascend(start, stop, includeStart, hit, iter); !ok {
+		if hit, ok = n.children[len(n.children)-1].ascend(start, stop, hit, iter); !ok {
 			return hit, false
 		}
 	}
 	return hit, true
 }
 
+// TODO(radu): support inclusive stop bound.
 func (n *node[K, V]) descend(
-	start, stop optionalItem[K], includeStart bool, hit bool, iter func(K, V) bool,
+	start UpperBound[K], stop LowerBound[K], hit bool, iter func(K, V) bool,
 ) (bool, bool) {
 	var ok bool
 	var index int
-	if start.valid {
+	if start.kind != boundKindNone {
 		var found bool
-		index, found = findKV(n.items, start.item, n.cow.less)
+		index, found = findKV(n.items, start.key, n.cow.less)
 		if !found {
 			index = index - 1
 		}
@@ -349,17 +339,17 @@ func (n *node[K, V]) descend(
 		index = len(n.items) - 1
 	}
 	for i := index; i >= 0; i-- {
-		if start.valid && !n.cow.less(n.items[i].k, start.item) {
-			if !includeStart || hit || n.cow.less(start.item, n.items[i].k) {
+		if start.kind != boundKindNone && !n.cow.less(n.items[i].k, start.key) {
+			if start.kind == boundKindExclusive || hit || n.cow.less(start.key, n.items[i].k) {
 				continue
 			}
 		}
 		if len(n.children) > 0 {
-			if hit, ok = n.children[i+1].descend(start, stop, includeStart, hit, iter); !ok {
+			if hit, ok = n.children[i+1].descend(start, stop, hit, iter); !ok {
 				return hit, false
 			}
 		}
-		if stop.valid && !n.cow.less(stop.item, n.items[i].k) {
+		if stop.kind != boundKindNone && !n.cow.less(stop.key, n.items[i].k) {
 			return hit, false //	continue
 		}
 		hit = true
@@ -368,7 +358,7 @@ func (n *node[K, V]) descend(
 		}
 	}
 	if len(n.children) > 0 {
-		if hit, ok = n.children[0].descend(start, stop, includeStart, hit, iter); !ok {
+		if hit, ok = n.children[0].descend(start, stop, hit, iter); !ok {
 			return hit, false
 		}
 	}
