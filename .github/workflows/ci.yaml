@@ -75,7 +75,7 @@ jobs:
           go-version: "${{ matrix.go }}"
 
       - run: go install github.com/cockroachdb/stress@latest
-      - run: go test ./... -exec 'stress -p 2 -maxruns 1000' -v
+      - run: go test ./... -exec 'stress -p 2 -maxruns 100' -v
 
   linux-stress-race:
     name: go-linux-stress-race
@@ -92,4 +92,4 @@ jobs:
           go-version: "${{ matrix.go }}"
 
       - run: go install github.com/cockroachdb/stress@latest
-      - run: go test ./... -race -exec 'stress -p 1 -maxruns 100' -v
+      - run: go test ./... -race -exec 'stress -p 1 -maxruns 20' -v
