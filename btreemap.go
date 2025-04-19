@@ -60,7 +60,10 @@
 // its 'Less' function for ordering.
 package btreemap
 
-import "sort"
+import (
+	"iter"
+	"sort"
+)
 
 // Item represents a single object in the tree.
 type Item interface {
@@ -316,6 +319,38 @@ func LE[K any](key K) UpperBound[K] { return UpperBound[K]{key: key, kind: bound
 
 // LT returns an UpperBound that does not include the given key in the iteration.
 func LT[K any](key K) UpperBound[K] { return UpperBound[K]{key: key, kind: boundKindExclusive} }
+
+func (t *BTreeMap[K, V]) NewAscendFn(
+	start LowerBound[K], stop UpperBound[K], yield func(key K, value V) bool,
+) {
+	if t.root != nil {
+		t.root.ascend(start, stop, false, yield)
+	}
+}
+
+func (t *BTreeMap[K, V]) NewAscend(start LowerBound[K], stop UpperBound[K]) iter.Seq2[K, V] {
+	return func(yield func(key K, value V) bool) {
+		if t.root != nil {
+			t.root.ascend(start, stop, false, yield)
+		}
+	}
+}
+
+func (t *BTreeMap[K, V]) NewDescendFn(
+	start UpperBound[K], stop LowerBound[K], yield func(key K, value V) bool,
+) {
+	if t.root != nil {
+		t.root.descend(start, stop, false, yield)
+	}
+}
+
+func (t *BTreeMap[K, V]) NewDescend(start UpperBound[K], stop LowerBound[K]) iter.Seq2[K, V] {
+	return func(yield func(key K, value V) bool) {
+		if t.root != nil {
+			t.root.descend(start, stop, false, yield)
+		}
+	}
+}
 
 // AscendRange calls the iterator for every value in the tree within the range
 // [greaterOrEqual, lessThan), until iterator returns false.

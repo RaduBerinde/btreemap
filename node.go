@@ -308,8 +308,11 @@ func (n *node[K, V]) ascend(
 			continue
 		}
 		hit = true
-		if stop.kind != boundKindNone && n.cow.cmp(n.items[i].k, stop.key) >= 0 {
-			return hit, false
+		if stop.kind != boundKindNone {
+			c := n.cow.cmp(n.items[i].k, stop.key)
+			if c > 0 || (c == 0 && stop.kind == boundKindExclusive) {
+				return hit, false
+			}
 		}
 		if !iter(n.items[i].k, n.items[i].v) {
 			return hit, false
@@ -350,8 +353,11 @@ func (n *node[K, V]) descend(
 				return hit, false
 			}
 		}
-		if stop.kind != boundKindNone && n.cow.cmp(stop.key, n.items[i].k) >= 0 {
-			return hit, false //	continue
+		if stop.kind != boundKindNone {
+			c := n.cow.cmp(n.items[i].k, stop.key)
+			if c < 0 || (c == 0 && stop.kind == boundKindExclusive) {
+				return hit, false
+			}
 		}
 		hit = true
 		if !iter(n.items[i].k, n.items[i].v) {
