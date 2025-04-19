@@ -282,14 +282,8 @@ func (n *node[K, V]) growChildAndRemove(i int, key K, minItems int, typ toRemove
 	return n.remove(key, minItems, typ)
 }
 
-// iterate provides a simple method for iterating over elements in the tree.
-//
-// When ascending, the 'start' should be less than 'stop' and when descending,
-// the 'start' should be greater than 'stop'. Setting 'includeStart' to true
-// will force the iterator to include the first item when it equals 'start',
-// thus creating a "greaterOrEqual" or "lessThanEqual" rather than just a
-// "greaterThan" or "lessThan" queries.
-// TODO(radu): support inclusive stop bound.
+// asced provides a simple method for iterating over elements in the tree, in
+// ascending order.
 func (n *node[K, V]) ascend(
 	start LowerBound[K], stop UpperBound[K], hit bool, iter func(K, V) bool,
 ) (bool, bool) {
@@ -327,7 +321,8 @@ func (n *node[K, V]) ascend(
 	return hit, true
 }
 
-// TODO(radu): support inclusive stop bound.
+// descend provides a simple method for iterating over elements in the tree, in
+// ascending order.
 func (n *node[K, V]) descend(
 	start UpperBound[K], stop LowerBound[K], hit bool, iter func(K, V) bool,
 ) (bool, bool) {
@@ -379,6 +374,18 @@ func (n *node[K, V]) print(w io.Writer, level int) {
 	for _, c := range n.children {
 		c.print(w, level+1)
 	}
+}
+
+// reset returns a subtree to the freelist.  It breaks out immediately if the
+// freelist is full, since the only benefit of iterating is to fill that
+// freelist up.  Returns true if parent reset call should continue.
+func (n *node[K, V]) reset(c *copyOnWriteContext[K, V]) bool {
+	for _, child := range n.children {
+		if !child.reset(c) {
+			return false
+		}
+	}
+	return c.freeNode(n) != ftFreelistFull
 }
 
 // items stores items in a node.

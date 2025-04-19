@@ -12,77 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// In Go 1.18 and beyond, a BTreeMap generic is created, and BTreeMap is a specific
-// instantiation of that generic for the Item interface, with a backwards-
-// compatible API.  Before go1.18, generics are not supported,
-// and BTreeMap is just an implementation based around the Item interface.
-
-// Package btree implements in-memory B-Trees of arbitrary degree.
+// Package btreemap implements an ordered key-value map using an in-memory
+// B-Tree of arbitrary degree.
 //
-// btree implements an in-memory B-Tree for use as an ordered data structure.
-// It is not meant for persistent storage solutions.
-//
-// It has a flatter structure than an equivalent red-black or other binary tree,
-// which in some cases yields better memory usage and/or performance.
-// See some discussion on the matter here:
-//
-//	http://google-opensource.blogspot.com/2013/01/c-containers-that-save-memory-and-time.html
-//
-// Note, though, that this project is in no way related to the C++ B-Tree
-// implementation written about there.
-//
-// Within this tree, each node contains a slice of items and a (possibly nil)
-// slice of children.  For basic numeric values or raw structs, this can cause
-// efficiency differences when compared to equivalent C++ template code that
-// stores values in arrays within the node:
-//   - Due to the overhead of storing values as interfaces (each
-//     value needs to be stored as the value itself, then 2 words for the
-//     interface pointing to that value and its type), resulting in higher
-//     memory use.
-//   - Since interfaces can point to values anywhere in memory, values are
-//     most likely not stored in contiguous blocks, resulting in a higher
-//     number of cache misses.
-//
-// These issues don't tend to matter, though, when working with strings or other
-// heap-allocated structures, since C++-equivalent structures also must store
-// pointers and also distribute their values across the heap.
-//
-// This implementation is designed to be a drop-in replacement to gollrb.LLRB
-// trees, (http://github.com/petar/gollrb), an excellent and probably the most
-// widely used ordered tree implementation in the Go ecosystem currently.
-// Its functions, therefore, exactly mirror those of
-// llrb.LLRB where possible.  Unlike gollrb, though, we currently don't
-// support storing multiple equivalent values.
-//
-// There are two implementations; those suffixed with 'G' are generics, usable
-// for any type, and require a passed-in "less" function to define their ordering.
-// Those without this prefix are specific to the 'Item' interface, and use
-// its 'Less' function for ordering.
+// The internal B-Tree code is based on github.com/google/btree.
 package btreemap
 
 import "iter"
 
-// Item represents a single object in the tree.
-type Item interface {
-	// Less tests whether the current item is less than the given argument.
-	//
-	// This must provide a strict weak ordering.
-	// If !a.Less(b) && !b.Less(a), we treat this to mean a == b (i.e. we can only
-	// hold one of either a or b in the tree).
-	Less(than Item) bool
-}
-
-// New creates a new B-Tree with the given degree.
+// New creates a new map backed by a B-Tree with the given degree.
 //
-// New(2), for example, will create a 2-3-4 tree (each node contains 1-3 items
-// and 2-4 children).
+// New(2), for example, will create a 2-3-4 tree, where each node contains 1 to 3
+// items and 2 to 4 children).
 //
-// The passed-in LessFunc determines how objects of type T are ordered.
+// The passed-in CmpFunc determines how objects of type T are ordered. For
+// ordered basic types, use cmp.Compare.
 func New[K any, V any](degree int, cmp CmpFunc[K]) *BTreeMap[K, V] {
 	return NewWithFreeList(degree, cmp, NewFreeList[K, V](DefaultFreeListSize))
 }
 
-// NewWithFreeList creates a new B-Tree that uses the given node free list.
+// NewWithFreeList creates a new map that uses the given node free list.
 func NewWithFreeList[K any, V any](degree int, cmp CmpFunc[K], f *FreeList[K, V]) *BTreeMap[K, V] {
 	if degree <= 1 {
 		panic("bad degree")
@@ -93,13 +42,11 @@ func NewWithFreeList[K any, V any](degree int, cmp CmpFunc[K], f *FreeList[K, V]
 	}
 }
 
-// BTreeMap is a generic implementation of a B-Tree.
+// BTreeMap implements an ordered key-value map using an in-memory B-Tree of
+// arbitrary degree. It allows easy insertion, removal, and iteration.
 //
-// BTreeMap stores items of type T in an ordered structure, allowing easy insertion,
-// removal, and iteration.
-//
-// Write operations are not safe for concurrent mutation by multiple
-// goroutines, but Read operations are.
+// Write operations are not safe for concurrent mutation by multiple goroutines,
+// but Read operations are.
 type BTreeMap[K any, V any] struct {
 	degree int
 	length int
@@ -113,33 +60,14 @@ type BTreeMap[K any, V any] struct {
 // - a positive number if a > b.
 type CmpFunc[K any] func(a, b K) int
 
-// copyOnWriteContext pointers determine node ownership... a tree with a write
-// context equivalent to a node's write context is allowed to modify that node.
-// A tree whose write context does not match a node's is not allowed to modify
-// it, and must create a new, writable copy (IE: it's a Clone).
-//
-// When doing any write operation, we maintain the invariant that the current
-// node's context is equal to the context of the tree that requested the write.
-// We do this by, before we descend into any node, creating a copy with the
-// correct context if the contexts don't match.
-//
-// Since the node we're currently visiting on any write has the requesting
-// tree's context, that node is modifiable in place.  Children of that node may
-// not share context, but before we descend into them, we'll make a mutable
-// copy.
-type copyOnWriteContext[K any, V any] struct {
-	freelist *FreeList[K, V]
-	cmp      CmpFunc[K]
-}
-
 // Clone clones the btree, lazily.  Clone should not be called concurrently,
 // but the original tree (t) and the new tree (t2) can be used concurrently
 // once the Clone call completes.
 //
 // The internal tree structure of b is marked read-only and shared between t and
-// t2.  Writes to both t and t2 use copy-on-write logic, creating new nodes
-// whenever one of b's original nodes would have been modified.  Read operations
-// should have no performance degredation.  Write operations for both t and t2
+// t2. Writes to both t and t2 use copy-on-write logic, creating new nodes
+// whenever one of b's original nodes would have been modified. Read operations
+// should have no performance degradation. Write operations for both t and t2
 // will initially experience minor slow-downs caused by additional allocs and
 // copies due to the aforementioned copy-on-write logic, but should converge to
 // the original performance characteristics of the original tree.
@@ -154,50 +82,6 @@ func (t *BTreeMap[K, V]) Clone() (t2 *BTreeMap[K, V]) {
 	t.cow = &cow1
 	out.cow = &cow2
 	return &out
-}
-
-// maxItems returns the max number of items to allow per node.
-func (t *BTreeMap[K, V]) maxItems() int {
-	return t.degree*2 - 1
-}
-
-// minItems returns the min number of items to allow per node (ignored for the
-// root node).
-func (t *BTreeMap[K, V]) minItems() int {
-	return t.degree - 1
-}
-
-func (c *copyOnWriteContext[K, V]) newNode() (n *node[K, V]) {
-	n = c.freelist.newNode()
-	n.cow = c
-	return
-}
-
-type freeType int
-
-const (
-	ftFreelistFull freeType = iota // node was freed (available for GC, not stored in freelist)
-	ftStored                       // node was stored in the freelist for later use
-	ftNotOwned                     // node was ignored by COW, since it's owned by another one
-)
-
-// freeNode frees a node within a given COW context, if it's owned by that
-// context.  It returns what happened to the node (see freeType const
-// documentation).
-func (c *copyOnWriteContext[K, V]) freeNode(n *node[K, V]) freeType {
-	if n.cow == c {
-		// clear to allow GC
-		n.items.truncate(0)
-		n.children.truncate(0)
-		n.cow = nil
-		if c.freelist.freeNode(n) {
-			return ftStored
-		} else {
-			return ftFreelistFull
-		}
-	} else {
-		return ftNotOwned
-	}
 }
 
 // ReplaceOrInsert adds the given item to the tree.  If an item in the tree
@@ -265,43 +149,32 @@ func (t *BTreeMap[K, V]) deleteItem(key K, typ toRemove) (_ K, _ V, _ bool) {
 	return out.k, out.v, outb
 }
 
-type bound[K any] struct {
-	kind boundKind
-	key  K
-}
-
-type boundKind uint8
-
-const (
-	boundKindNone boundKind = iota
-	boundKindInclusive
-	boundKindExclusive
-)
-
-// LowerBound defines the (optional) lower bound for an iteration.
+// LowerBound defines an (optional) lower bound for iteration.
 type LowerBound[K any] bound[K]
 
 // Min returns a LowerBound that does not limit the lower bound of the iteration.
 func Min[K any]() LowerBound[K] { return LowerBound[K]{kind: boundKindNone} }
 
-// GE returns a LowerBound that includes the given key in the iteration.
+// GE returns an inclusive lower bound.
 func GE[K any](key K) LowerBound[K] { return LowerBound[K]{key: key, kind: boundKindInclusive} }
 
-// GT returns a LowerBound that does not include the given key in the iteration.
+// GT returns an exclusive lower bound.
 func GT[K any](key K) LowerBound[K] { return LowerBound[K]{key: key, kind: boundKindExclusive} }
 
-// UpperBound defines the (optional) upper bound for an iteration.
+// UpperBound defines an (optional) upper bound for iteration.
 type UpperBound[K any] bound[K]
 
 // Max returns an UpperBound that does not limit the upper bound of the iteration.
 func Max[K any]() UpperBound[K] { return UpperBound[K]{kind: boundKindNone} }
 
-// LE returns an UpperBound that includes the given key in the iteration.
+// LE returns an inclusive upper bound.
 func LE[K any](key K) UpperBound[K] { return UpperBound[K]{key: key, kind: boundKindInclusive} }
 
-// LT returns an UpperBound that does not include the given key in the iteration.
+// LT returns an exclusive upper bound.
 func LT[K any](key K) UpperBound[K] { return UpperBound[K]{key: key, kind: boundKindExclusive} }
 
+// AscendFunc calls yield() for all elements between the start and stop bounds,
+// in ascending order.
 func (t *BTreeMap[K, V]) AscendFunc(
 	start LowerBound[K], stop UpperBound[K], yield func(key K, value V) bool,
 ) {
@@ -310,6 +183,8 @@ func (t *BTreeMap[K, V]) AscendFunc(
 	}
 }
 
+// Ascend returns an iterator which yields all elements between the start and
+// stop bounds, in ascending order.
 func (t *BTreeMap[K, V]) Ascend(start LowerBound[K], stop UpperBound[K]) iter.Seq2[K, V] {
 	return func(yield func(key K, value V) bool) {
 		if t.root != nil {
@@ -318,6 +193,8 @@ func (t *BTreeMap[K, V]) Ascend(start LowerBound[K], stop UpperBound[K]) iter.Se
 	}
 }
 
+// DescendFunc calls yield() for all elements between the start and stop bounds,
+// in ascending order.
 func (t *BTreeMap[K, V]) DescendFunc(
 	start UpperBound[K], stop LowerBound[K], yield func(key K, value V) bool,
 ) {
@@ -326,6 +203,8 @@ func (t *BTreeMap[K, V]) DescendFunc(
 	}
 }
 
+// Descend returns an iterator which yields all elements between the start and
+// stop bounds, in ascending order.
 func (t *BTreeMap[K, V]) Descend(start UpperBound[K], stop LowerBound[K]) iter.Seq2[K, V] {
 	return func(yield func(key K, value V) bool) {
 		if t.root != nil {
@@ -334,8 +213,8 @@ func (t *BTreeMap[K, V]) Descend(start UpperBound[K], stop LowerBound[K]) iter.S
 	}
 }
 
-// Get looks for the key item in the tree, returning it.  It returns
-// (zeroValue, false) if unable to find that item.
+// Get looks for the key in the tree, returning (key, value, true) if found, or
+// (0, 0, false) otherwise.
 func (t *BTreeMap[K, V]) Get(key K) (_ K, _ V, _ bool) {
 	if t.root == nil {
 		return
@@ -343,12 +222,14 @@ func (t *BTreeMap[K, V]) Get(key K) (_ K, _ V, _ bool) {
 	return t.root.get(key)
 }
 
-// Min returns the smallest item in the tree, or (zeroValue, false) if the tree is empty.
+// Min returns the smallest key and associated value in the tree, or
+// (0, 0, false) if the tree is empty.
 func (t *BTreeMap[K, V]) Min() (K, V, bool) {
 	return min(t.root)
 }
 
-// Max returns the largest item in the tree, or (zeroValue, false) if the tree is empty.
+// Max returns the largest key and associated value in the tree, or
+// (0, 0, false) if the tree is empty.
 func (t *BTreeMap[K, V]) Max() (K, V, bool) {
 	return max(t.root)
 }
@@ -392,14 +273,78 @@ func (t *BTreeMap[K, V]) Clear(addNodesToFreelist bool) {
 	t.root, t.length = nil, 0
 }
 
-// reset returns a subtree to the freelist.  It breaks out immediately if the
-// freelist is full, since the only benefit of iterating is to fill that
-// freelist up.  Returns true if parent reset call should continue.
-func (n *node[K, V]) reset(c *copyOnWriteContext[K, V]) bool {
-	for _, child := range n.children {
-		if !child.reset(c) {
-			return false
+// maxItems returns the max number of items to allow per node.
+func (t *BTreeMap[K, V]) maxItems() int {
+	return t.degree*2 - 1
+}
+
+// minItems returns the min number of items to allow per node (ignored for the
+// root node).
+func (t *BTreeMap[K, V]) minItems() int {
+	return t.degree - 1
+}
+
+// copyOnWriteContext pointers determine node ownership... a tree with a write
+// context equivalent to a node's write context is allowed to modify that node.
+// A tree whose write context does not match a node's is not allowed to modify
+// it, and must create a new, writable copy (IE: it's a Clone).
+//
+// When doing any write operation, we maintain the invariant that the current
+// node's context is equal to the context of the tree that requested the write.
+// We do this by, before we descend into any node, creating a copy with the
+// correct context if the contexts don't match.
+//
+// Since the node we're currently visiting on any write has the requesting
+// tree's context, that node is modifiable in place.  Children of that node may
+// not share context, but before we descend into them, we'll make a mutable
+// copy.
+type copyOnWriteContext[K any, V any] struct {
+	freelist *FreeList[K, V]
+	cmp      CmpFunc[K]
+}
+
+type bound[K any] struct {
+	kind boundKind
+	key  K
+}
+
+type boundKind uint8
+
+const (
+	boundKindNone boundKind = iota
+	boundKindInclusive
+	boundKindExclusive
+)
+
+func (c *copyOnWriteContext[K, V]) newNode() *node[K, V] {
+	n := c.freelist.newNode()
+	n.cow = c
+	return n
+}
+
+type freeType int
+
+const (
+	ftFreelistFull freeType = iota // node was freed (available for GC, not stored in freelist)
+	ftStored                       // node was stored in the freelist for later use
+	ftNotOwned                     // node was ignored by COW, since it's owned by another one
+)
+
+// freeNode frees a node within a given COW context, if it's owned by that
+// context.  It returns what happened to the node (see freeType const
+// documentation).
+func (c *copyOnWriteContext[K, V]) freeNode(n *node[K, V]) freeType {
+	if n.cow == c {
+		// clear to allow GC
+		n.items.truncate(0)
+		n.children.truncate(0)
+		n.cow = nil
+		if c.freelist.freeNode(n) {
+			return ftStored
+		} else {
+			return ftFreelistFull
 		}
+	} else {
+		return ftNotOwned
 	}
-	return c.freeNode(n) != ftFreelistFull
 }
