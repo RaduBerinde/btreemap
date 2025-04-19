@@ -75,11 +75,6 @@ type Item interface {
 	Less(than Item) bool
 }
 
-// ItemIterator allows callers of {A/De}scend* to iterate in-order over portions of
-// the tree.  When this function returns false, iteration will stop and the
-// associated Ascend* function will immediately return.
-type ItemIterator[K, V any] func(key K, value V) bool
-
 // New creates a new B-Tree with the given degree.
 //
 // New(2), for example, will create a 2-3-4 tree (each node contains 1-3 items
@@ -350,78 +345,6 @@ func (t *BTreeMap[K, V]) NewDescend(start UpperBound[K], stop LowerBound[K]) ite
 			t.root.descend(start, stop, false, yield)
 		}
 	}
-}
-
-// AscendRange calls the iterator for every value in the tree within the range
-// [greaterOrEqual, lessThan), until iterator returns false.
-func (t *BTreeMap[K, V]) AscendRange(greaterOrEqual, lessThan K, iterator ItemIterator[K, V]) {
-	if t.root == nil {
-		return
-	}
-	t.root.ascend(GE(greaterOrEqual), LT(lessThan), false, iterator)
-}
-
-// AscendLessThan calls the iterator for every value in the tree within the range
-// [first, pivot), until iterator returns false.
-func (t *BTreeMap[K, V]) AscendLessThan(pivot K, iterator ItemIterator[K, V]) {
-	if t.root == nil {
-		return
-	}
-	t.root.ascend(Min[K](), LT(pivot), false, iterator)
-}
-
-// AscendGreaterOrEqual calls the iterator for every value in the tree within
-// the range [pivot, last], until iterator returns false.
-func (t *BTreeMap[K, V]) AscendGreaterOrEqual(pivot K, iterator ItemIterator[K, V]) {
-	if t.root == nil {
-		return
-	}
-	t.root.ascend(GE(pivot), Max[K](), false, iterator)
-}
-
-// Ascend calls the iterator for every value in the tree within the range
-// [first, last], until iterator returns false.
-func (t *BTreeMap[K, V]) Ascend(iterator ItemIterator[K, V]) {
-	if t.root == nil {
-		return
-	}
-	t.root.ascend(Min[K](), Max[K](), false, iterator)
-}
-
-// DescendRange calls the iterator for every value in the tree within the range
-// [lessOrEqual, greaterThan), until iterator returns false.
-func (t *BTreeMap[K, V]) DescendRange(lessOrEqual, greaterThan K, iterator ItemIterator[K, V]) {
-	if t.root == nil {
-		return
-	}
-	t.root.descend(LE(lessOrEqual), GT(greaterThan), false, iterator)
-}
-
-// DescendLessOrEqual calls the iterator for every value in the tree within the range
-// [pivot, first], until iterator returns false.
-func (t *BTreeMap[K, V]) DescendLessOrEqual(pivot K, iterator ItemIterator[K, V]) {
-	if t.root == nil {
-		return
-	}
-	t.root.descend(LE(pivot), Min[K](), false, iterator)
-}
-
-// DescendGreaterThan calls the iterator for every value in the tree within
-// the range [last, pivot), until iterator returns false.
-func (t *BTreeMap[K, V]) DescendGreaterThan(pivot K, iterator ItemIterator[K, V]) {
-	if t.root == nil {
-		return
-	}
-	t.root.descend(Max[K](), GT(pivot), false, iterator)
-}
-
-// Descend calls the iterator for every value in the tree within the range
-// [last, first], until iterator returns false.
-func (t *BTreeMap[K, V]) Descend(iterator ItemIterator[K, V]) {
-	if t.root == nil {
-		return
-	}
-	t.root.descend(Max[K](), Min[K](), false, iterator)
 }
 
 // Get looks for the key item in the tree, returning it.  It returns

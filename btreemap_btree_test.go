@@ -37,6 +37,57 @@ func (b *bTree[T]) Clone() *bTree[T] {
 	}
 }
 
+// ItemIterator allows callers of {A/De}scend* to iterate in-order over portions of
+// the tree.  When this function returns false, iteration will stop and the
+// associated Ascend* function will immediately return.
+type ItemIterator[K, V any] func(key K, value V) bool
+
+func (t *bTree[T]) AscendRange(greaterOrEqual, lessThan T, iterator ItemIterator[T, struct{}]) {
+	t.BTreeMap.NewAscendFn(GE(greaterOrEqual), LT(lessThan), iterator)
+}
+
+// AscendLessThan calls the iterator for every value in the tree within the range
+// [first, pivot), until iterator returns false.
+func (t *bTree[T]) AscendLessThan(pivot T, iterator ItemIterator[T, struct{}]) {
+	t.BTreeMap.NewAscendFn(Min[T](), LT(pivot), iterator)
+}
+
+// AscendGreaterOrEqual calls the iterator for every value in the tree within
+// the range [pivot, last], until iterator returns false.
+func (t *bTree[T]) AscendGreaterOrEqual(pivot T, iterator ItemIterator[T, struct{}]) {
+	t.BTreeMap.NewAscendFn(GE(pivot), Max[T](), iterator)
+}
+
+// Ascend calls the iterator for every value in the tree within the range
+// [first, last], until iterator returns false.
+func (t *bTree[T]) Ascend(iterator ItemIterator[T, struct{}]) {
+	t.BTreeMap.NewAscendFn(Min[T](), Max[T](), iterator)
+}
+
+// DescendRange calls the iterator for every value in the tree within the range
+// [lessOrEqual, greaterThan), until iterator returns false.
+func (t *bTree[T]) DescendRange(lessOrEqual, greaterThan T, iterator ItemIterator[T, struct{}]) {
+	t.BTreeMap.NewDescendFn(LE(lessOrEqual), GT(greaterThan), iterator)
+}
+
+// DescendLessOrEqual calls the iterator for every value in the tree within the range
+// [pivot, first], until iterator returns false.
+func (t *bTree[T]) DescendLessOrEqual(pivot T, iterator ItemIterator[T, struct{}]) {
+	t.BTreeMap.NewDescendFn(LE(pivot), Min[T](), iterator)
+}
+
+// DescendGreaterThan calls the iterator for every value in the tree within
+// the range [last, pivot), until iterator returns false.
+func (t *bTree[T]) DescendGreaterThan(pivot T, iterator ItemIterator[T, struct{}]) {
+	t.BTreeMap.NewDescendFn(Max[T](), GT(pivot), iterator)
+}
+
+// Descend calls the iterator for every value in the tree within the range
+// [last, first], until iterator returns false.
+func (t *bTree[T]) Descend(iterator ItemIterator[T, struct{}]) {
+	t.BTreeMap.NewDescendFn(Max[T](), Min[T](), iterator)
+}
+
 func newInt(degree int) *bTree[int] {
 	return &bTree[int]{
 		BTreeMap: New[int, struct{}](degree, cmp.Compare[int]),
@@ -684,7 +735,7 @@ func BenchmarkDeleteAndRestoreG(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			dels := make([]int, 0, tr.Len())
-			tr.Ascend(func(b int, _ struct{}) bool {
+			tr.NewAscendFn(Min[int](), Max[int](), func(b int, _ struct{}) bool {
 				dels = append(dels, b)
 				return true
 			})
