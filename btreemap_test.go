@@ -131,51 +131,7 @@ func TestRandomized(t *testing.T) {
 
 			i := instances[rng.IntN(len(instances))]
 
-			// Cross-check iteration results.
-			for checks := 0; checks < 10; checks++ {
-				a := rng.IntN(maxKey + 1)
-				b := rng.IntN(maxKey + 1)
-				if a > b {
-					a, b = b, a
-				}
-				expected := i.n.KeysInRange(a, b)
-
-				low := GE(a)
-				if rng.IntN(2) == 0 {
-					low = GT(a - 1)
-				}
-				if a == 0 && rng.IntN(2) == 0 {
-					low = Min[int]()
-				}
-				high := LE(b)
-				if rng.IntN(2) == 0 {
-					high = LT(b + 1)
-				}
-				if b == maxKey && rng.IntN(2) == 0 {
-					high = Max[int]()
-				}
-				var actual []int
-				for k, v := range i.m.Ascend(low, high) {
-					if v != i.n.values[k] {
-						t.Fatalf("seed: %d invalid value for key %d", seed, k)
-					}
-					actual = append(actual, k)
-				}
-				if !reflect.DeepEqual(expected, actual) {
-					t.Fatalf("seed: %d expected %v, Ascend produced %v", seed, expected, actual)
-				}
-				slices.Reverse(expected)
-				actual = actual[:0]
-				for k, v := range i.m.Descend(high, low) {
-					if v != i.n.values[k] {
-						t.Fatalf("seed: %d invalid value for key %d", seed, k)
-					}
-					actual = append(actual, k)
-				}
-				if !reflect.DeepEqual(expected, actual) {
-					t.Fatalf("seed: %d expected %v, Descend produced %v", seed, expected, actual)
-				}
-			}
+			crossCheck(t, rng, seed, maxKey, i.m, i.n)
 
 			op := rng.IntN(100)
 			switch {
@@ -189,12 +145,32 @@ func TestRandomized(t *testing.T) {
 					t.Fatalf("seed: %d ReplaceOrInsert(%d, %d) got (%d, %d, %v), want (%d, %d, %v)", seed, k, v, ak, av, ab, ek, ev, eb)
 				}
 
-			case op <= 99:
+			case op <= 90:
 				k := rng.IntN(maxKey + 1)
 				ak, av, ab := i.m.Delete(k)
 				ek, ev, eb := i.n.Delete(k)
 				if ak != ek || av != ev || ab != eb {
 					t.Fatalf("seed: %d Delete(%d) got (%d, %d, %v), want (%d, %d, %v)", seed, k, ak, av, ab, ek, ev, eb)
+				}
+
+			case op <= 93:
+				ak, av, ab := i.m.DeleteMin()
+				ek, ev, eb := i.n.Min()
+				if eb {
+					i.n.Delete(ek)
+				}
+				if ak != ek || av != ev || ab != eb {
+					t.Fatalf("seed: %d DeleteMin() got (%d, %d, %v), want (%d, %d, %v)", seed, ak, av, ab, ek, ev, eb)
+				}
+
+			case op <= 96:
+				ak, av, ab := i.m.DeleteMax()
+				ek, ev, eb := i.n.Max()
+				if eb {
+					i.n.Delete(ek)
+				}
+				if ak != ek || av != ev || ab != eb {
+					t.Fatalf("seed: %d DeleteMax() got (%d, %d, %v), want (%d, %d, %v)", seed, ak, av, ab, ek, ev, eb)
 				}
 
 			default:
@@ -209,6 +185,84 @@ func TestRandomized(t *testing.T) {
 					instances[rng.IntN(len(instances))] = c
 				}
 			}
+		}
+	}
+}
+
+// crossCheck runs various queries on m and cross-checks the results using n.
+func crossCheck(
+	t *testing.T, rng *rand.Rand, seed uint64, maxKey int, m *BTreeMap[int, int], n *naive,
+) {
+	ek, ev, eb := n.Min()
+	if k, v, b := m.Min(); k != ek || v != ev || b != eb {
+		t.Fatalf("seed: %d invalid Min", seed)
+	}
+	ek, ev, eb = n.Max()
+	if k, v, b := m.Max(); k != ek || v != ev || b != eb {
+		t.Fatalf("seed: %d invalid Max", seed)
+	}
+
+	for checks := 0; checks < 40; checks++ {
+		a := rng.IntN(maxKey + 1)
+
+		if val := n.values[a]; val == 0 {
+			if m.Has(a) {
+				t.Fatalf("seed: %d Has(%d) should be false", seed, a)
+			}
+			k, v, ok := m.Get(a)
+			if k != 0 || v != 0 || ok {
+				t.Fatalf("seed: %d Get(%d) should be (0, 0, false)", seed, a)
+			}
+		} else {
+			if !m.Has(a) {
+				t.Fatalf("seed: %d Has(%d) should be true", seed, a)
+			}
+			k, v, ok := m.Get(a)
+			if k != a || v != val || !ok {
+				t.Fatalf("seed: %d Get(%d) should be (%d, %d, true)", seed, a, a, val)
+			}
+		}
+
+		b := rng.IntN(maxKey + 1)
+		if a > b {
+			a, b = b, a
+		}
+		expected := n.KeysInRange(a, b)
+
+		low := GE(a)
+		if rng.IntN(2) == 0 {
+			low = GT(a - 1)
+		}
+		if a == 0 && rng.IntN(2) == 0 {
+			low = Min[int]()
+		}
+		high := LE(b)
+		if rng.IntN(2) == 0 {
+			high = LT(b + 1)
+		}
+		if b == maxKey && rng.IntN(2) == 0 {
+			high = Max[int]()
+		}
+		var actual []int
+		for k, v := range m.Ascend(low, high) {
+			if v != n.values[k] {
+				t.Fatalf("seed: %d invalid value for key %d", seed, k)
+			}
+			actual = append(actual, k)
+		}
+		if !reflect.DeepEqual(expected, actual) {
+			t.Fatalf("seed: %d expected %v, Ascend produced %v", seed, expected, actual)
+		}
+		slices.Reverse(expected)
+		actual = actual[:0]
+		for k, v := range m.Descend(high, low) {
+			if v != n.values[k] {
+				t.Fatalf("seed: %d invalid value for key %d", seed, k)
+			}
+			actual = append(actual, k)
+		}
+		if !reflect.DeepEqual(expected, actual) {
+			t.Fatalf("seed: %d expected %v, Descend produced %v", seed, expected, actual)
 		}
 	}
 }
@@ -236,6 +290,24 @@ func (n *naive) KeysInRange(low, high int) []int {
 		}
 	}
 	return r
+}
+
+func (n *naive) Min() (int, int, bool) {
+	for i, v := range n.values {
+		if v != 0 {
+			return i, v, true
+		}
+	}
+	return 0, 0, false
+}
+
+func (n *naive) Max() (int, int, bool) {
+	for i := len(n.values) - 1; i >= 0; i-- {
+		if n.values[i] != 0 {
+			return i, n.values[i], true
+		}
+	}
+	return 0, 0, false
 }
 
 func (n *naive) Delete(k int) (int, int, bool) {

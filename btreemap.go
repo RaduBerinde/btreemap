@@ -60,10 +60,7 @@
 // its 'Less' function for ordering.
 package btreemap
 
-import (
-	"iter"
-	"sort"
-)
+import "iter"
 
 // Item represents a single object in the tree.
 type Item interface {
@@ -94,16 +91,6 @@ func NewWithFreeList[K any, V any](degree int, cmp CmpFunc[K], f *FreeList[K, V]
 		degree: degree,
 		cow:    &copyOnWriteContext[K, V]{freelist: f, cmp: cmp},
 	}
-}
-
-// findKV returns the index where the given key should be inserted into this
-// list.  'found' is true if the kty already exists in the list at the given
-// index.
-func findKV[K any, V any](s items[kv[K, V]], key K, cmp CmpFunc[K]) (index int, found bool) {
-	i := sort.Search(len(s), func(i int) bool {
-		return cmp(key, s[i].k) <= 0
-	})
-	return i, i < len(s) && cmp(key, s[i].k) == 0
 }
 
 // BTreeMap is a generic implementation of a B-Tree.

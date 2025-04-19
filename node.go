@@ -17,6 +17,7 @@ package btreemap
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 )
 
@@ -424,4 +425,14 @@ func (s *items[T]) truncate(index int) {
 	for i := 0; i < len(toClear); i++ {
 		toClear[i] = zero
 	}
+}
+
+// findKV returns the index where the given key should be inserted into this
+// list.  'found' is true if the kty already exists in the list at the given
+// index.
+func findKV[K any, V any](s items[kv[K, V]], key K, cmp CmpFunc[K]) (index int, found bool) {
+	i := sort.Search(len(s), func(i int) bool {
+		return cmp(key, s[i].k) <= 0
+	})
+	return i, i < len(s) && cmp(key, s[i].k) == 0
 }
