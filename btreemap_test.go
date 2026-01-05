@@ -202,9 +202,29 @@ func crossCheck(
 		t.Fatalf("seed: %d invalid Max", seed)
 	}
 
-	for checks := 0; checks < 40; checks++ {
-		a := rng.IntN(maxKey + 1)
+	for range 5 {
+		// Test Seek methods.
+		seekKey := rng.IntN(maxKey + 2)
+		ek, ev, eb = n.SeekGE(seekKey)
+		if k, v, b := m.SeekGE(seekKey); k != ek || v != ev || b != eb {
+			t.Fatalf("seed: %d SeekGE(%d) got (%d,%d,%v), want (%d,%d,%v)", seed, seekKey, k, v, b, ek, ev, eb)
+		}
+		ek, ev, eb = n.SeekGT(seekKey)
+		if k, v, b := m.SeekGT(seekKey); k != ek || v != ev || b != eb {
+			t.Fatalf("seed: %d SeekGT(%d) got (%d,%d,%v), want (%d,%d,%v)", seed, seekKey, k, v, b, ek, ev, eb)
+		}
+		ek, ev, eb = n.SeekLE(seekKey)
+		if k, v, b := m.SeekLE(seekKey); k != ek || v != ev || b != eb {
+			t.Fatalf("seed: %d SeekLE(%d) got (%d,%d,%v), want (%d,%d,%v)", seed, seekKey, k, v, b, ek, ev, eb)
+		}
+		ek, ev, eb = n.SeekLT(seekKey)
+		if k, v, b := m.SeekLT(seekKey); k != ek || v != ev || b != eb {
+			t.Fatalf("seed: %d SeekLT(%d) got (%d,%d,%v), want (%d,%d,%v)", seed, seekKey, k, v, b, ek, ev, eb)
+		}
+	}
 
+	for range 40 {
+		a := rng.IntN(maxKey + 1)
 		if val := n.values[a]; val == 0 {
 			if m.Has(a) {
 				t.Fatalf("seed: %d Has(%d) should be false", seed, a)
@@ -321,4 +341,48 @@ func (n *naive) Delete(k int) (int, int, bool) {
 
 func (n *naive) Clone() *naive {
 	return &naive{values: n.values}
+}
+
+func (n *naive) SeekGE(key int) (int, int, bool) {
+	for i := key; i < len(n.values); i++ {
+		if n.values[i] != 0 {
+			return i, n.values[i], true
+		}
+	}
+	return 0, 0, false
+}
+
+func (n *naive) SeekGT(key int) (int, int, bool) {
+	for i := key + 1; i < len(n.values); i++ {
+		if n.values[i] != 0 {
+			return i, n.values[i], true
+		}
+	}
+	return 0, 0, false
+}
+
+func (n *naive) SeekLE(key int) (int, int, bool) {
+	start := key
+	if start >= len(n.values) {
+		start = len(n.values) - 1
+	}
+	for i := start; i >= 0; i-- {
+		if n.values[i] != 0 {
+			return i, n.values[i], true
+		}
+	}
+	return 0, 0, false
+}
+
+func (n *naive) SeekLT(key int) (int, int, bool) {
+	start := key - 1
+	if start >= len(n.values) {
+		start = len(n.values) - 1
+	}
+	for i := start; i >= 0; i-- {
+		if n.values[i] != 0 {
+			return i, n.values[i], true
+		}
+	}
+	return 0, 0, false
 }
