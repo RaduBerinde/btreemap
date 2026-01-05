@@ -386,3 +386,26 @@ func (n *naive) SeekLT(key int) (int, int, bool) {
 	}
 	return 0, 0, false
 }
+
+func TestNoAllocs(t *testing.T) {
+	m := New[int, int](4, cmp.Compare[int])
+	for i := 0; i < 100; i++ {
+		m.ReplaceOrInsert(i, i*i)
+	}
+
+	allocs := testing.AllocsPerRun(100, func() {
+		m.Min()
+		m.Max()
+		m.SeekGE(50)
+		m.SeekGT(50)
+		m.SeekLE(50)
+		m.SeekLT(50)
+		for range m.Ascend(GE(10), LE(90)) {
+		}
+		for range m.Descend(LE(90), GE(10)) {
+		}
+	})
+	if allocs != 0 {
+		t.Errorf("expected 0 allocations, got %v", allocs)
+	}
+}
