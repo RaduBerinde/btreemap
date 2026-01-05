@@ -84,11 +84,9 @@ func (t *BTreeMap[K, V]) Clone() (t2 *BTreeMap[K, V]) {
 	return &out
 }
 
-// ReplaceOrInsert adds the given item to the tree.  If an item in the tree
+// ReplaceOrInsert adds the given item to the tree. If an item in the tree
 // already equals the given one, it is removed from the tree and returned,
-// and the second return value is true.  Otherwise, (zeroValue, false)
-//
-// nil cannot be added to the tree (will panic).
+// and the second return value is true. Otherwise, (0, 0, false)
 func (t *BTreeMap[K, V]) ReplaceOrInsert(key K, value V) (_ K, _ V, replaced bool) {
 	if t.root == nil {
 		t.root = t.cow.newNode()
@@ -240,7 +238,7 @@ func (t *BTreeMap[K, V]) SeekGE(key K) (_ K, _ V, ok bool) {
 	for k, v := range t.Ascend(GE[K](key), Max[K]()) {
 		return k, v, true
 	}
-	return *new(K), *new(V), false
+	return zero[K](), zero[V](), false
 }
 
 // SeekGT returns the first key/value pair strictly greater than the given key,
@@ -249,7 +247,7 @@ func (t *BTreeMap[K, V]) SeekGT(key K) (_ K, _ V, ok bool) {
 	for k, v := range t.Ascend(GT[K](key), Max[K]()) {
 		return k, v, true
 	}
-	return *new(K), *new(V), false
+	return zero[K](), zero[V](), false
 }
 
 // SeekLE returns the first key/value pair less than or equal to the given
@@ -258,7 +256,7 @@ func (t *BTreeMap[K, V]) SeekLE(key K) (_ K, _ V, ok bool) {
 	for k, v := range t.Descend(LE[K](key), Min[K]()) {
 		return k, v, true
 	}
-	return *new(K), *new(V), false
+	return zero[K](), zero[V](), false
 }
 
 // SeekLT returns the first key/value pair strictly less than the given key, or
@@ -267,7 +265,7 @@ func (t *BTreeMap[K, V]) SeekLT(key K) (_ K, _ V, ok bool) {
 	for k, v := range t.Descend(LT[K](key), Min[K]()) {
 		return k, v, true
 	}
-	return *new(K), *new(V), false
+	return zero[K](), zero[V](), false
 }
 
 // Has returns true if the given key is in the tree.
@@ -383,4 +381,9 @@ func (c *copyOnWriteContext[K, V]) freeNode(n *node[K, V]) freeType {
 	} else {
 		return ftNotOwned
 	}
+}
+
+func zero[T any]() T {
+	var t T
+	return t
 }
